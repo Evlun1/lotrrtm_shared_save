@@ -1,0 +1,10 @@
+# Python backend
+.venv/
+zip_build_dir/
+# Terraform infra
+.terraform/
+.terraform.lock.hcl
+lambda_package.zip
+terraform.tfstate*
+# VSCode settings
+.vscode/
