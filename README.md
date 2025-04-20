@@ -21,6 +21,7 @@ There are two folders : backend and infra. The whole project relies on AWS to wo
 
 - the backend has a quick FastAPI python project with two routes : one to post the save, and one to fetch it (and lock it for others)
 - the infra folder, on Terraform, deploys the backend in a lambda function, creates an S3 to store files, SSM parameters to store lock state and file names, and appropriate IAM role & policy
+- the scripts folder, with a bash script utility to automatically call app when launching PC game through Steam to fetch save, and upload it back when game is over
 
 ### Security considerations
 
@@ -75,3 +76,14 @@ export TF_VAR_ssm_pasword_value=xxxx  # at most 20 chars of your choosing
 terraform plan
 terraform apply
 ```
+
+#### Script
+
+Many thanks to @MoaMoaK for providing [the original version of the script](https://gitlab.com/-/snippets/4832002) ! 
+
+If you want to use provided script, you need to have a bash version installed on your computer, and Return To Moria as a Steam game.
+
+1. Copy script to a path of your choice and complete all parameters
+2. Open Return To Moria game page in your Steam Library
+3. Click on Settings/Properties/General
+4. In launch options, set : `bash [your_script_path/lotr_moria_steam_wrapper.sh] "%command%"`
