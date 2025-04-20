@@ -15,11 +15,17 @@ AWS_REGION = os.getenv("AWS_REGION", "eu-west-3")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 SSM_PARAMETER_NAME = os.getenv("SSM_PARAMETER_NAME")
 SSM_FILENAME_PARAMETER_NAME = os.getenv("SSM_FILENAME_PARAMETER_NAME")
+SSM_PASSWORD_PARAMETER_NAME = os.getenv("SSM_PASSWORD_PARAMETER_NAME")
 LOCK_VALUE_UNLOCKED = "unlocked"
 
-if not S3_BUCKET_NAME or not SSM_PARAMETER_NAME or not SSM_FILENAME_PARAMETER_NAME:
+if (
+    not S3_BUCKET_NAME
+    or not SSM_PARAMETER_NAME
+    or not SSM_FILENAME_PARAMETER_NAME
+    or not SSM_PASSWORD_PARAMETER_NAME
+):
     raise ValueError(
-        "Missing required environment variables: S3_BUCKET_NAME, SSM_PARAMETER_NAME, SSM_FILENAME_PARAMETER_NAME"
+        "Missing required environment variables: S3_BUCKET_NAME, SSM_PARAMETER_NAME, SSM_FILENAME_PARAMETER_NAME, SSM_PASSWORD_PARAMETER_NAME"
     )
 
 # --- Logging ---
@@ -40,12 +46,14 @@ app = FastAPI()
 
 
 # --- Helper Functions ---
-def get_ssm_parameter(parameter_name: str) -> str | None:
+def get_ssm_parameter(parameter_name: str, with_decryption: bool = False) -> str | None:
     """Fetches the value of an SSM parameter."""
     if not ssm_client:
         return None
     try:
-        response = ssm_client.get_parameter(Name=parameter_name, WithDecryption=False)
+        response = ssm_client.get_parameter(
+            Name=parameter_name, WithDecryption=with_decryption
+        )
         return response["Parameter"]["Value"]
     except ssm_client.exceptions.ParameterNotFound:
         logger.info(f"SSM Parameter '{parameter_name}' not found.")
@@ -81,7 +89,11 @@ def set_ssm_parameter(parameter_name: str, value: str, overwrite: bool = True) -
 
 # --- API Routes ---
 @app.get("/get")
-async def get_file(background_tasks: BackgroundTasks, who_are_you: str = Query(...)):
+async def get_file(
+    background_tasks: BackgroundTasks,
+    who_are_you: str = Query(..., max_length=20),
+    password: str = Query(..., max_length=20),
+):
     """
     Fetches the file named in the filename SSM parameter from S3 if the API lock is 'unlocked'.
     If unlocked, it updates the lock with the 'who_are_you' value and returns the file.
@@ -89,6 +101,10 @@ async def get_file(background_tasks: BackgroundTasks, who_are_you: str = Query(.
     """
     if not s3_client or not ssm_client:
         raise HTTPException(status_code=503, detail="AWS service client not available.")
+
+    app_password = get_ssm_parameter(SSM_PASSWORD_PARAMETER_NAME, with_decryption=True)
+    if app_password != password:
+        raise HTTPException(status_code=403, detail="Provided password not valid")
 
     current_lock_value = get_ssm_parameter(SSM_PARAMETER_NAME)
 
@@ -168,7 +184,11 @@ def clean_temp_dir(temp_dir: tempfile.TemporaryDirectory) -> None:
 
 
 @app.post("/post")
-async def upload_file(who_are_you: str = Query(...), file: UploadFile = File(...)):
+async def upload_file(
+    who_are_you: str = Query(..., max_length=20),
+    password: str = Query(..., max_length=20),
+    file: UploadFile = File(...),
+):
     """
     Uploads a file to S3 if the API lock is not 'unlocked'.
     If the lock SSM parameter doesn't exist, it creates it with value 'unlocked'.
@@ -176,6 +196,10 @@ async def upload_file(who_are_you: str = Query(...), file: UploadFile = File(...
     """
     if not s3_client or not ssm_client:
         raise HTTPException(status_code=503, detail="AWS service client not available.")
+
+    app_password = get_ssm_parameter(SSM_PASSWORD_PARAMETER_NAME, with_decryption=True)
+    if app_password != password:
+        raise HTTPException(status_code=403, detail="Provided password not valid")
 
     logger.info(
         f"Received upload request from '{who_are_you}'. Uploading filename: '{file.filename}'"
@@ -246,9 +270,14 @@ handler = Mangum(app)
 if __name__ == "__main__":
     import uvicorn
 
-    if not S3_BUCKET_NAME or not SSM_PARAMETER_NAME or not SSM_FILENAME_PARAMETER_NAME:
+    if (
+        not S3_BUCKET_NAME
+        or not SSM_PARAMETER_NAME
+        or not SSM_FILENAME_PARAMETER_NAME
+        or not SSM_PASSWORD_PARAMETER_NAME
+    ):
         print(
-            "ERROR: Set S3_BUCKET_NAME, SSM_PARAMETER_NAME, and SSM_FILENAME_PARAMETER_NAME environment variables for local testing."
+            "ERROR: Set S3_BUCKET_NAME, SSM_PARAMETER_NAME, SSM_FILENAME_PARAMETER_NAME and SSM_PASSWORD_PARAMETER_NAME environment variables for local testing."
         )
     else:
         print(f"Starting Uvicorn server locally...")
@@ -256,4 +285,5 @@ if __name__ == "__main__":
         print(f"Using Bucket: {S3_BUCKET_NAME}")
         print(f"Using Lock Param: {SSM_PARAMETER_NAME}")
         print(f"Using Filename Param: {SSM_FILENAME_PARAMETER_NAME}")
+        print(f"Using Password Param: {SSM_PASSWORD_PARAMETER_NAME}")
         uvicorn.run(app, host="0.0.0.0", port=8000)

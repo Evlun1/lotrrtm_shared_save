@@ -22,6 +22,14 @@ There are two folders : backend and infra. The whole project relies on AWS to wo
 - the backend has a quick FastAPI python project with two routes : one to post the save, and one to fetch it (and lock it for others)
 - the infra folder, on Terraform, deploys the backend in a lambda function, creates an S3 to store files, SSM parameters to store lock state and file names, and appropriate IAM role & policy
 
+### Security considerations
+
+To provide basic security for the application, you must pass a password value of your choice when creating your infrastructure, at most 20 characters.
+
+This value is then stored as an SSM parameter SecureString in AWS, to be read by application.
+
+Be still warned that this application, even though having minimal IAM rights and an uncomitted password, could not be considered as secured according to production grade standards. 
+
 ### Requirements
 
 #### AWS
@@ -44,12 +52,13 @@ cd backend
 # Setup backend
 uv venv --python 3.12
 uv pip install -r requirements.txt
-# Launch backend locally (needs AWS setup in terminal)
+# Launch backend locally (needs AWS setup in terminal and .env file complete)
 uv run main.py
 # Should you add new requirements
 uv pip freeze > requirements.txt
 # Prepare zip dir for lambda packaging for infra (-t option not in uv pip so gotta workaround it)
 uv run pip install -r requirements.txt -t zip_build_dir
+cp main.py zip_build_dir/
 ```
 
 #### Infra
@@ -62,6 +71,7 @@ uv run pip install -r requirements.txt -t zip_build_dir
 # In a terminal with AWS account setup
 cd infra
 terraform init
+export TF_VAR_ssm_pasword_value=xxxx  # at most 20 chars of your choosing
 terraform plan
 terraform apply
 ```

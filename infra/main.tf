@@ -47,6 +47,9 @@ resource "aws_ssm_parameter" "api_lock" {
     Project   = var.project_name
     ManagedBy = "Terraform"
   }
+  lifecycle {
+    ignore_changes = [ value ]
+  }
 }
 
 resource "aws_ssm_parameter" "api_filename" {
@@ -56,6 +59,26 @@ resource "aws_ssm_parameter" "api_filename" {
   value       = var.ssm_initial_value
   tags = {
     Name      = var.ssm_filename_parameter_name
+    Project   = var.project_name
+    ManagedBy = "Terraform"
+  }
+  lifecycle {
+    ignore_changes = [ value ]
+  }
+}
+
+data "aws_kms_key" "this" {
+  key_id = "alias/aws/ssm"
+}
+
+resource "aws_ssm_parameter" "api_password" {
+  name        = var.ssm_password_parameter_name
+  description = "Name of the last successfully uploaded file"
+  type        = "SecureString"
+  value       = var.ssm_password_value
+  key_id      = data.aws_kms_key.this.id
+  tags = {
+    Name      = var.ssm_password_parameter_name
     Project   = var.project_name
     ManagedBy = "Terraform"
   }
@@ -112,6 +135,24 @@ data "aws_iam_policy_document" "lambda_permissions_policy" {
       aws_ssm_parameter.api_filename.arn
     ]
   }
+
+  statement {
+    actions = [
+      "ssm:GetParameter",
+    ]
+    resources = [
+      aws_ssm_parameter.api_password.arn
+    ]
+  }
+
+  statement {
+    actions = [ 
+      "kms:Decrypt"
+    ]
+    resources = [
+      data.aws_kms_key.this.arn
+    ]
+  }
 }
 
 resource "aws_iam_policy" "lambda_permissions" {
@@ -154,6 +195,7 @@ resource "aws_lambda_function" "api_lambda" {
       S3_BUCKET_NAME              = aws_s3_bucket.data_bucket.id
       SSM_PARAMETER_NAME          = aws_ssm_parameter.api_lock.name
       SSM_FILENAME_PARAMETER_NAME = aws_ssm_parameter.api_filename.name
+      SSM_PASSWORD_PARAMETER_NAME = aws_ssm_parameter.api_password.name
     }
   }
 

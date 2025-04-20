@@ -33,3 +33,8 @@ output "ssm_filename_parameter_name" {
   description = "Name of the created SSM Parameter for the filename"
   value       = aws_ssm_parameter.api_filename.name
 }
+
+output "ssm_password_parameter_name" {
+  description = "Name of the created SSM Parameter for the filename"
+  value       = aws_ssm_parameter.api_filename.name
+}
